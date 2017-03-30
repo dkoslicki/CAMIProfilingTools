@@ -56,7 +56,7 @@ class Profile(object):
 						elif header == 'TAXPATH':
 							tax_path_pos = header_iter
 							self._tax_path_pos = tax_path_pos
-						elif header == 'TAXPATHSN':
+						elif header == 'TAXPATHSN' or header == "TAXPATH_SN":
 							tax_path_sn_pos = header_iter
 							self._tax_path_sn_pos = tax_path_sn_pos
 						elif header == 'PERCENTAGE':
