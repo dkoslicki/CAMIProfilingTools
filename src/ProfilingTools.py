@@ -2,6 +2,7 @@
 # TO DO: Add unifrac with flow (after I fix it in the EMDUnifrac repository)
 import sys
 import copy
+import os
 
 
 class Profile(object):
@@ -26,7 +27,11 @@ class Profile(object):
 		self._eps = .0000000000000001  # This is to act like zero, ignore any lines with abundance below this quantity
 
 		if self.input_file_name:
-			self.parse_file()
+			if not os.path.exists(self.input_file_name):
+				print("Input file %s does not exist" % self.input_file_name)
+				raise Exception
+			else:
+				self.parse_file()
 
 	def parse_file(self):
 		input_file_name = self.input_file_name
@@ -126,6 +131,48 @@ class Profile(object):
 					_data[ancestor] = dict()
 					_data[ancestor]["descendants"] = list()
 					_data[ancestor]["descendants"].append(tax_id)
+
+		# Unfortunately, some of the profile files may be missing intermediate ranks,
+		# so we should manually populate them here
+		# This will only really fix one missing intermediate rank....
+		for key in _data.keys():
+			if "abundance" not in _data[key]:  # this is a missing intermediate rank
+				# all the descendants *should* be in there, so leverage this info
+				if "descendants" not in _data[key]:
+					print("You're screwed, malformed profile file with rank %s" % key)
+					raise Exception
+				else:
+					descendant = _data[key]["descendants"][0]
+					to_populate_key = descendant  # just need the first one since the higher up path will be the same
+					to_populate = copy.deepcopy(_data[to_populate_key])
+					tax_path = to_populate["tax_path"]
+					tax_path_sn = to_populate["tax_path_sn"]
+					descendant_pos = tax_path.index(descendant)
+					for i in range(len(tax_path) - 1, descendant_pos - 1, -1):
+						tax_path.pop(i)
+						tax_path_sn.pop(i)
+					to_populate["branch_length"] = 1
+					if rank in to_populate:
+						rank = to_populate["rank"]
+						if rank == "strain":
+							rank = "species"
+						elif rank == "species":
+							rank = "genus"
+						elif rank == "genus":
+							rank = "family"
+						elif rank == "family":
+							rank = "order"
+						elif rank == "order":
+							rank = "class"
+						elif rank == "class":
+							rank = "phylum"
+						elif rank == "phylum":
+							rank = "superkingdom"
+						to_populate["ancestor"] = tax_path[-2]
+					_data[key] = to_populate
+
+
+
 		return
 
 	def write_file(self, out_file_name=None):
@@ -232,7 +279,7 @@ class Profile(object):
 			else:
 				_data[key] = copy.copy(_other_data[key])  # otherwise use the whole thing
 
-	def unifrac(self, other):
+	def unifrac(self, other, eps=0):
 		if not isinstance(other, Profile):
 			print("Must be a profile")
 			raise Exception
@@ -246,7 +293,6 @@ class Profile(object):
 		R = copy.deepcopy(P)  # this will be our partial sums
 		# next, do partial_sums = P - Q
 		Z = 0
-		eps = 0  # Might make this a very small value at some point
 		for key in Q._data.keys():
 			if key in R._data:
 				R._data[key]["abundance"] -= Q._data[key]["abundance"]
