@@ -1,4 +1,5 @@
 # This is a collection of scripts that will allow manipulation of CAMI profiling files
+# TO DO: Add unifrac with flow (after I fix it in the EMDUnifrac repository)
 import sys
 import copy
 
@@ -15,6 +16,7 @@ class Profile(object):
 		self._data["-1"]["tax_path_sn"] = list()
 		self._data["-1"]["abundance"] = 0
 		self._data["-1"]["descendants"] = list()
+		self._data["-1"]["branch_length"] = 0
 		self._header = list()
 		self._tax_id_pos = None
 		self._rank_pos = None
@@ -59,8 +61,7 @@ class Profile(object):
 					_header.append(line)  # store data and move on
 					continue
 				if not all([isinstance(x, int) for x in [tax_id_pos, tax_path_pos, abundance_pos]]):
-					print(
-					"Appears the headers TAXID, TAXPATH, and PERCENTAGE are missing from the header (should start with line @@)")
+					print("Appears the headers TAXID, TAXPATH, and PERCENTAGE are missing from the header (should start with line @@)")
 					sys.exit(2)
 				temp_split = line.split('\t')
 				tax_id = temp_split[tax_id_pos].strip()
@@ -80,12 +81,15 @@ class Profile(object):
 					# Find the ancestor
 					if len(tax_path) <= 1:
 						_data[tax_id]["ancestor"] = "-1"  # no ancestor, it's a root
+						_data[tax_id]["branch_length"] = 1
 						ancestor = "-1"
 					else:
 						ancestor = tax_path[-2]
+						_data[tax_id]["branch_length"] = 1
 						i = -3
 						while ancestor is "" or ancestor == tax_id:  # if it's a blank or repeated, go up until finding ancestor
 							ancestor = tax_path[i]
+							_data[tax_id]["branch_length"] += 1
 							i -= 1
 						_data[tax_id]["ancestor"] = ancestor
 				else:  # Otherwise populate the data
@@ -99,12 +103,15 @@ class Profile(object):
 					# Find the ancestor
 					if len(tax_path) <= 1:
 						_data[tax_id]["ancestor"] = "-1"  # no ancestor, it's a root
+						_data[tax_id]["branch_length"] = 1
 						ancestor = "-1"
 					else:
 						ancestor = tax_path[-2]
+						_data[tax_id]["branch_length"] = 1
 						i = -3
 						while ancestor is "" or ancestor == tax_id:  # if it's a blank or repeated, go up until finding ancestor
 							ancestor = tax_path[i]
+							_data[tax_id]["branch_length"] += 1
 							i -= 1
 						_data[tax_id]["ancestor"] = ancestor
 				# Create a placeholder descendant key initialized to [], just so each tax_id has a descendant key associated to it
@@ -194,18 +201,19 @@ class Profile(object):
 
 	def normalize(self):
 		# Need to really push it up while subtracting, then normalize, then push up wile adding
-		#self._push_up(operation="subtract")
+		# self._push_up(operation="subtract")
 		self._subtract_down()
 		_data = self._data
 		keys = _data.keys()
 		total_abundance = 0
 		for key in keys:
 			total_abundance += _data[key]["abundance"]
-		print(total_abundance)
+		# print(total_abundance)
 		for key in keys:
-			_data[key]["abundance"] /= total_abundance
-			_data[key]["abundance"] *= 100  # make back into a percentage
-		#self._push_up(operation="add")
+			if total_abundance > 0:
+				_data[key]["abundance"] /= total_abundance
+				_data[key]["abundance"] *= 100  # make back into a percentage
+		# self._push_up(operation="add")
 		self._add_up()
 		return
 
@@ -223,6 +231,41 @@ class Profile(object):
 				_data[key]["abundance"] += _other_data[key]["abundance"]  # if already in there, add abundances
 			else:
 				_data[key] = copy.copy(_other_data[key])  # otherwise use the whole thing
+
+	def unifrac(self, other):
+		if not isinstance(other, Profile):
+			print("Must be a profile")
+			raise Exception
+		# For the fun of it, let's throw in the unifrac distance
+		P = copy.deepcopy(self)  # make a copy of the data since we don't want to change it
+		Q = copy.deepcopy(other)
+		P.normalize()
+		Q.normalize()
+		P._subtract_down()
+		Q._subtract_down()
+		R = copy.deepcopy(P)  # this will be our partial sums
+		# next, do partial_sums = P - Q
+		Z = 0
+		eps = 0  # Might make this a very small value at some point
+		for key in Q._data.keys():
+			if key in R._data:
+				R._data[key]["abundance"] -= Q._data[key]["abundance"]
+			else:
+				R._data[key] = Q._data[key]  # Do I need to use copy here?
+				R._data[key]["abundance"] = -R._data[key]["abundance"]
+		# Since everything here is percentages, we need to divide to get back to fractions
+		for key in R._data.keys():
+			R._data[key]["abundance"] /= 100
+		# Then push up the mass while adding
+		for key in R._data.keys():
+			val = R._data[key]["abundance"]
+			if abs(val) > eps:
+				if "ancestor" in R._data[key]:
+					ancestor = R._data[key]["ancestor"]
+					R._data[ancestor]["abundance"] += val
+					Z += abs(val) * R._data[key]["branch_length"]
+		return Z
+
 
 
 
