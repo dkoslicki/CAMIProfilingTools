@@ -295,10 +295,10 @@ class Profile(object):
 		Z = 0
 		for key in Q._data.keys():
 			if key in R._data:
-				R._data[key]["abundance"] -= Q._data[key]["abundance"]
+				R._data[key]["abundance"] -= Q._data[key]["abundance"]  # Subtract Q from R
 			else:
 				R._data[key] = Q._data[key]  # Do I need to use copy here?
-				R._data[key]["abundance"] = -R._data[key]["abundance"]
+				R._data[key]["abundance"] = -R._data[key]["abundance"]  # Put -Q in the blank space of R
 		# Since everything here is percentages, we need to divide to get back to fractions
 		for key in R._data.keys():
 			R._data[key]["abundance"] /= 100
@@ -311,8 +311,3 @@ class Profile(object):
 					R._data[ancestor]["abundance"] += val
 					Z += abs(val) * R._data[key]["branch_length"]
 		return Z
-
-
-
-
-

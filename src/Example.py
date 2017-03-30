@@ -55,7 +55,7 @@ if __name__ == '__main__':
 	for i in xrange(len(profiles)):
 		for j in xrange(i+1, len(profiles)):
 			print("On pair (%d,%d)" % (i,j))
-			val = profiles[i].unifrac(profiles[j])
+			val = profiles[i].unifrac(profiles[j], eps=.01)
 			D[i, j] = val
 			D[j, i] = val
 
