@@ -2,11 +2,19 @@
 import sys
 import copy
 
+
 class Profile(object):
 	def __init__(self, input_file_name=None):
 		# Initialize file name (if appropriate)
 		self.input_file_name = input_file_name
 		self._data = dict()
+		# Stick in the root node just to make sure everything is consistent
+		self._data["-1"] = dict()
+		self._data["-1"]["rank"] = None
+		self._data["-1"]["tax_path"] = list()
+		self._data["-1"]["tax_path_sn"] = list()
+		self._data["-1"]["abundance"] = 0
+		self._data["-1"]["descendants"] = list()
 		self._header = list()
 		self._tax_id_pos = None
 		self._rank_pos = None
@@ -62,8 +70,24 @@ class Profile(object):
 					rank = temp_split[rank_pos].strip()
 				if isinstance(tax_path_sn_pos, int):  # might not be present
 					tax_path_sn = temp_split[tax_path_sn_pos].strip().split("|")  # this will be a list, join up later
-				if tax_id in _data:  # If this tax_id is already present, just add the abundance. NOT CHECKING FOR CONSISTENCY WITH PATH
+				if tax_id in _data:  # If this tax_id is already present, add the abundance. NOT CHECKING FOR CONSISTENCY WITH PATH
 					_data[tax_id]["abundance"] += abundance
+					_data[tax_id]["tax_path"] = tax_path
+					if isinstance(rank_pos, int):  # might not be present
+						_data[tax_id]["rank"] = rank
+					if isinstance(tax_path_sn_pos, int):  # might not be present
+						_data[tax_id]["tax_path_sn"] = tax_path_sn
+					# Find the ancestor
+					if len(tax_path) <= 1:
+						_data[tax_id]["ancestor"] = "-1"  # no ancestor, it's a root
+						ancestor = "-1"
+					else:
+						ancestor = tax_path[-2]
+						i = -3
+						while ancestor is "" or ancestor == tax_id:  # if it's a blank or repeated, go up until finding ancestor
+							ancestor = tax_path[i]
+							i -= 1
+						_data[tax_id]["ancestor"] = ancestor
 				else:  # Otherwise populate the data
 					_data[tax_id] = dict()
 					_data[tax_id]["abundance"] = abundance
@@ -72,7 +96,29 @@ class Profile(object):
 						_data[tax_id]["rank"] = rank
 					if isinstance(tax_path_sn_pos, int):  # might not be present
 						_data[tax_id]["tax_path_sn"] = tax_path_sn
-
+					# Find the ancestor
+					if len(tax_path) <= 1:
+						_data[tax_id]["ancestor"] = "-1"  # no ancestor, it's a root
+						ancestor = "-1"
+					else:
+						ancestor = tax_path[-2]
+						i = -3
+						while ancestor is "" or ancestor == tax_id:  # if it's a blank or repeated, go up until finding ancestor
+							ancestor = tax_path[i]
+							i -= 1
+						_data[tax_id]["ancestor"] = ancestor
+				# Create a placeholder descendant key initialized to [], just so each tax_id has a descendant key associated to it
+				if "descendants" not in _data[tax_id]:  # if this tax_id doesn't have a descendant list,
+					_data[tax_id]["descendants"] = list()  # initialize to empty list
+				# add the descendants
+				if ancestor in _data:  # see if the ancestor is in the data so we can add this entry as a descendant
+					if "descendants" not in _data[ancestor]:  # if it's not present, create the descendant list
+						_data[ancestor]["descendants"] = list()
+					_data[ancestor]["descendants"].append(tax_id)  # since ancestor is an ancestor, add this descendant to it
+				else:  # if it's not already in the data, create the entry
+					_data[ancestor] = dict()
+					_data[ancestor]["descendants"] = list()
+					_data[ancestor]["descendants"].append(tax_id)
 		return
 
 	def write_file(self, out_file_name=None):
@@ -114,8 +160,26 @@ class Profile(object):
 				_data[key]["abundance"] = 0
 		return
 
-	def _push_up(self, operation=None):
+	def _subtract_down(self):
 		# helper function to push all the weights up by subtracting
+		# NOTE: when subtracting, need to start at root and go down
+		# NOTE: when adding, need to start at leaves and go up
+		_data = self._data
+		keys = _data.keys()
+		# This will be annoying to keep things in order...
+		# Let's iterate on the length of the tax_path since we know that will be in there
+		tax_path_lengths = max([len(_data[key]["tax_path"]) for key in keys])
+		for path_length in range(1, tax_path_lengths):  # eg tax_path_lengths = 5, use 1,2,3,4 since we stop at leaves
+			for key in keys:
+				if len(_data[key]["tax_path"]) == path_length:
+					descendants = _data[key]["descendants"]  # get all descendants
+					for descendant in descendants:
+						_data[key]["abundance"] -= _data[descendant]["abundance"]  # subtract the descendants abundance
+
+	def _add_up(self):
+		# helper function to push all the weights up by subtracting
+		# NOTE: when subtracting, need to start at root and go down
+		# NOTE: when adding, need to start at leaves and go up
 		_data = self._data
 		keys = _data.keys()
 		# This will be annoying to keep things in order...
@@ -124,26 +188,25 @@ class Profile(object):
 		for path_length in range(tax_path_lengths, 1, -1):  # eg tax_path_lengths = 5, use 5,4,3,2, since we stop at roots
 			for key in keys:
 				if len(_data[key]["tax_path"]) == path_length:
-					ancestor = _data[key]["tax_path"][-2]
-					if ancestor in _data:
-						if operation is "subtract":
-							_data[ancestor]["abundance"] -= _data[key]["abundance"]  # subtract the descendants abundance
-						elif operation is "add":
-							_data[ancestor]["abundance"] += _data[key]["abundance"]  # subtract the descendants abundance
-						else:
-							raise Exception
+					ancestor = _data[key]["ancestor"]
+					if ancestor in _data:  # don't do anything if this is a/the root node
+						_data[ancestor]["abundance"] += _data[key]["abundance"]  # add the descendants abundance
 
 	def normalize(self):
 		# Need to really push it up while subtracting, then normalize, then push up wile adding
-		self._push_up(operation="subtract")
+		#self._push_up(operation="subtract")
+		self._subtract_down()
 		_data = self._data
 		keys = _data.keys()
 		total_abundance = 0
 		for key in keys:
 			total_abundance += _data[key]["abundance"]
+		print(total_abundance)
 		for key in keys:
 			_data[key]["abundance"] /= total_abundance
-		self._push_up(operation="add")
+			_data[key]["abundance"] *= 100  # make back into a percentage
+		#self._push_up(operation="add")
+		self._add_up()
 		return
 
 	def merge(self, other):
