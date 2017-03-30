@@ -37,25 +37,18 @@ if __name__ == '__main__':
 
 	# Import all the profiles
 	profiles = []
-	i = 0
 	for file_name in files:
-		print("Importing file %d" % i)
-		i += 1
 		profiles.append(PF.Profile(input_file_name=file_name))
 
 	# Threshold all the profiles
-	i = 0
 	for profile in profiles:
-		print("Thresholding file %d" % i)
-		i += 1
 		profile.threshold(threshold=threshold)
 
 	# Compute EMDUnifrac
 	D = np.zeros((len(profiles), len(profiles)))
 	for i in xrange(len(profiles)):
 		for j in xrange(i+1, len(profiles)):
-			print("On pair (%d,%d)" % (i,j))
-			val = profiles[i].unifrac(profiles[j], eps=.01)
+			val = profiles[i].unifrac(profiles[j])
 			D[i, j] = val
 			D[j, i] = val
 

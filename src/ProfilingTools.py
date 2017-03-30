@@ -280,6 +280,9 @@ class Profile(object):
 				_data[key] = copy.copy(_other_data[key])  # otherwise use the whole thing
 
 	def unifrac(self, other, eps=0):
+		# I'm not sure this is giving the right answer....
+		print("Don't think this is working")
+		raise Exception
 		if not isinstance(other, Profile):
 			print("Must be a profile")
 			raise Exception
