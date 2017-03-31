@@ -26,6 +26,7 @@ class Profile(object):
 		self._tax_path_sn_pos = None
 		self._abundance_pos = None
 		self._eps = .0000000000000001  # This is to act like zero, ignore any lines with abundance below this quantity
+		self._all_keys = ["-1"]
 
 		if self.input_file_name:
 			if not os.path.exists(self.input_file_name):
@@ -38,6 +39,7 @@ class Profile(object):
 		input_file_name = self.input_file_name
 		_data = self._data
 		_header = self._header
+		_all_keys = self._all_keys
 		with open(input_file_name, 'r') as read_handler:
 			for line in read_handler:
 				line = line.rstrip()
@@ -71,6 +73,7 @@ class Profile(object):
 					sys.exit(2)
 				temp_split = line.split('\t')
 				tax_id = temp_split[tax_id_pos].strip()
+				_all_keys.append(tax_id)
 				tax_path = temp_split[tax_path_pos].strip().split("|")  # this will be a list, join up late
 				abundance = float(temp_split[abundance_pos].strip())
 				if isinstance(rank_pos, int):  # might not be present
@@ -132,10 +135,77 @@ class Profile(object):
 					_data[ancestor] = dict()
 					_data[ancestor]["descendants"] = list()
 					_data[ancestor]["descendants"].append(tax_id)
+		self._delete_missing()  # make sure there aren't any missing internal nodes
 
+	def _delete_missing(self):
+		# This is really only useful for MetaPhlAn profiles, which due to the infrequently updated taxonomy, contain
+		# many missing internal nodes, just delete the tax_id (make them "") and adjust branch lengths accordingly
+		_data = self._data
+		_good_keys = self._all_keys
+		current_keys = _data.keys()
+		bad_keys = []
+		# Remove the bad keys from the dictionary
+		for key in current_keys:  # go through the current keys
+			if key not in _good_keys:  # if it's not a good key
+				bad_keys.append(key)  # store the bad key
+				del _data[key]  # delete the entry
+		# Get the bad keys in the intermediate places
+		for key in _good_keys:
+			tax_path = _data[key]["tax_path"]
+			for tax_id in tax_path:  # look in full taxpath
+				if tax_id not in _good_keys:  # if it's a bad key
+					if tax_id not in bad_keys:  # and it's not already in the list
+						bad_keys.append(tax_id)  # add it to the list
+		# Don't regard the blank tax_id
+		if '' in bad_keys:
+			bad_keys.pop(bad_keys.index(''))
+		for key in _good_keys:
+			# branch_length = _data[key]["branch_length"]
+			tax_path = _data[key]["tax_path"]
+			# tax_path_sn = _data[key]["tax_path_sn"]
+			descendants = _data[key]["descendants"]
+			# ancestor = _data[key]["ancestor"]
+			for descendant in descendants:
+				if descendant in bad_keys:
+					descendants.pop(descendants.index(descendant))  # get rid of the bad descendants
+			bad_indicies = []  # find the indicies of the bad ones in the tax path
+			for tax_id in tax_path:
+				if tax_id in bad_keys:
+					index = tax_path.index(tax_id)
+					bad_indicies.append(index)  # store all the bad indicies
+			bad_indicies.sort(reverse=True)  # in reverse order
+			# branch_length += len(bad_indicies)  # increment the branch_lengths accordingly (might not work for good|bad|good|bad
+			for index in bad_indicies:
+				tax_path[index] = ''  # remove the bad tax_ids
+			# fix the branch lengths and find the ancestors
+			if len(tax_path) >= 2:
+				ancestor = tax_path[-2]
+				_data[key]["branch_length"] = 1
+				i = -3
+				while ancestor is "" or ancestor == key:  # if it's a blank or repeated, go up until finding ancestor
+					if i < -len(tax_path):  # Path is all the way full with bad tax_ids, connect to root
+						_data[key]["branch_length"] += 1
+						ancestor = "-1"
+						_data["-1"]["descendants"].append(key)  # note this is now a descendant of the root
+						break
+					else:
+						ancestor = tax_path[i]
+						_data[key]["branch_length"] += 1
+						i -= 1
+				_data[key]["ancestor"] = ancestor
+				if ancestor in _data:
+					if key not in _data[ancestor]["descendants"]:
+						_data[ancestor]["descendants"].append(key)  # Note this is now a descendant of it's ancestor
+		return
+
+	def _populate_missing_dont_use(self):
 		# Unfortunately, some of the profile files may be missing intermediate ranks,
 		# so we should manually populate them here
 		# This will only really fix one missing intermediate rank....
+		# INSTEAD!!! Let's just delete the missing intermediate ranks, if the tax_id isn't a key, delete it from the tax_id_path
+		# This is really only useful for MetaPhlAn profiles, which due to the infrequently updated taxonomy, contain
+		# many missing internal nodes
+		_data = self._data
 		for key in _data.keys():
 			if "abundance" not in _data[key]:  # this is a missing intermediate rank
 				# all the descendants *should* be in there, so leverage this info
@@ -189,9 +259,6 @@ class Profile(object):
 					if key not in _data[to_populate["ancestor"]]["descendants"]:
 						_data[to_populate["ancestor"]]["descendants"].append(key)
 					_data[key] = to_populate
-
-
-
 		return
 
 	def write_file(self, out_file_name=None):
@@ -443,11 +510,14 @@ class Profile(object):
 
 		return Tint2, lint2, nodes_in_order2, nodes_to_index, P, Q
 
+
 def test_normalize():
-	profile = Profile('/home/dkoslicki/Dropbox/Repositories/CAMIProfilingTools/src/test0.profile')
-	profile.write_file('/home/dkoslicki/Dropbox/Repositories/CAMIProfilingTools/src/test0.profile.import')
+	profile = Profile('/home/dkoslicki/Dropbox/Repositories/CAMIProfilingTools/src/test1.profile')
+	profile.write_file('/home/dkoslicki/Dropbox/Repositories/CAMIProfilingTools/src/test1.profile.import')
 	profile.normalize()
-	profile.write_file('/home/dkoslicki/Dropbox/Repositories/CAMIProfilingTools/src/test0.profile.normalize')
+	profile.write_file('/home/dkoslicki/Dropbox/Repositories/CAMIProfilingTools/src/test1.profile.normalize')
+	return profile
+
 
 def test_unifrac():
 	sys.path.append('/home/dkoslicki/Dropbox/Repositories/EMDUnifrac/src')
@@ -457,7 +527,7 @@ def test_unifrac():
 	t0 = timeit.default_timer()
 	(Tint, lint, nodes_in_order, nodes_to_index, P, Q) = profile1.make_unifrac_input_and_normalize(profile2)
 	t1 = timeit.default_timer()
-	print(t1-t0)
+	#print(t1-t0)
 	(Z, diffab) = EMDU.EMDUnifrac_weighted(Tint, lint, nodes_in_order, P, Q)
 	print(Z)
 	(Tint, lint, nodes_in_order, nodes_to_index, P, Q) = profile1.make_unifrac_input_and_normalize(profile2)
@@ -472,3 +542,27 @@ def test_unifrac():
 	print(diffab)
 	print(diffab2)
 	print(diffab3)
+
+
+def test_real_data():
+	profile1 = Profile('/home/dkoslicki/Dropbox/Repositories/CAMIProfilingTools/src/lane4-s041-indexN722-S502-ATGCGCAG-ATAGAGAG-41_M5-2_S41_L004_R1_001.fa.gz.metaphlan.profile')
+	profile2 = Profile('/home/dkoslicki/Dropbox/Repositories/CAMIProfilingTools/src/lane8-s092-indexN729-S505-TCGACGTC-CTCCTTAC-91_Z0299_S92_L008_R1_001.fa.gz.metaphlan.profile')
+	sys.path.append('/home/dkoslicki/Dropbox/Repositories/EMDUnifrac/src')
+	import EMDUnifrac as EMDU
+	(Tint, lint, nodes_in_order, nodes_to_index, P, Q) = profile1.make_unifrac_input_and_normalize(profile2)
+	(Z, diffab) = EMDU.EMDUnifrac_weighted(Tint, lint, nodes_in_order, P, Q)
+	print(Z)
+	(Tint, lint, nodes_in_order, nodes_to_index, P, Q) = profile1.make_unifrac_input_and_normalize(profile2)
+	(Z2, diffab2) = EMDU.EMDUnifrac_weighted(Tint, lint, nodes_in_order, P, Q)
+	print(Z2)
+	profile1.normalize()
+	profile2.normalize()
+	(Tint, lint, nodes_in_order, nodes_to_index, P, Q) = profile1.make_unifrac_input_and_normalize(profile2)
+	(Z3, diffab3) = EMDU.EMDUnifrac_weighted(Tint, lint, nodes_in_order, P, Q)
+	print(Z3)
+
+	print(diffab)
+	print(diffab2)
+	print(diffab3)
+	#return profile1, profile2
+
