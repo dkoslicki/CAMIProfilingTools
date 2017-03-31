@@ -1,8 +1,9 @@
 # This is a collection of scripts that will allow manipulation of CAMI profiling files
-# TO DO: Add unifrac with flow (after I fix it in the EMDUnifrac repository)
 import sys
 import copy
 import os
+import numpy as np
+import timeit
 
 
 class Profile(object):
@@ -152,7 +153,7 @@ class Profile(object):
 						tax_path.pop(i)
 						tax_path_sn.pop(i)
 					to_populate["branch_length"] = 1
-					if rank in to_populate:
+					if "rank" in to_populate:
 						rank = to_populate["rank"]
 						if rank == "strain":
 							rank = "species"
@@ -168,7 +169,25 @@ class Profile(object):
 							rank = "phylum"
 						elif rank == "phylum":
 							rank = "superkingdom"
-						to_populate["ancestor"] = tax_path[-2]
+						else:
+							print('Invalid rank')
+							raise Exception
+					else:
+						print('Missing rank')
+						raise Exception
+					to_populate["ancestor"] = tax_path[-2]
+					to_populate["rank"] = rank
+					# Now go through and sum up the abundance for which this guy is the ancestor
+					to_populate["abundance"] = 0
+					to_populate["descendants"] = []
+					for temp_key in _data.keys():
+						if "ancestor" in _data[temp_key]:
+							if _data[temp_key]["ancestor"] == key:
+								to_populate["abundance"] += _data[temp_key]["abundance"]
+								to_populate["descendants"].append(temp_key)
+					# Make sure this guy is listed as a descendant to his ancestor
+					if key not in _data[to_populate["ancestor"]]["descendants"]:
+						_data[to_populate["ancestor"]]["descendants"].append(key)
 					_data[key] = to_populate
 
 
@@ -279,38 +298,177 @@ class Profile(object):
 			else:
 				_data[key] = copy.copy(_other_data[key])  # otherwise use the whole thing
 
-	def unifrac(self, other, eps=0):
-		# I'm not sure this is giving the right answer....
-		print("Don't think this is working")
-		raise Exception
+	# Keep EMDUnifrac and CAMI in separate repositories. See EMDUnifrac/src/ for example of how to use the two
+	#def unifrac(self, other, eps=0):
+	#	# I'm not sure this is giving the right answer....
+	#	print("Don't think this is working")
+	#	raise Exception
+	#	if not isinstance(other, Profile):
+	#		print("Must be a profile")
+	#		raise Exception
+	#	# For the fun of it, let's throw in the unifrac distance
+	#	P = copy.deepcopy(self)  # make a copy of the data since we don't want to change it
+	#	Q = copy.deepcopy(other)
+	#	P.normalize()
+	#	Q.normalize()
+	#	P._subtract_down()
+	#	Q._subtract_down()
+	#	R = copy.deepcopy(P)  # this will be our partial sums
+	#	# next, do partial_sums = P - Q
+	#	Z = 0
+	#	for key in Q._data.keys():
+	#		if key in R._data:
+	#			R._data[key]["abundance"] -= Q._data[key]["abundance"]  # Subtract Q from R
+	#		else:
+	#			R._data[key] = Q._data[key]  # Do I need to use copy here?
+	#			R._data[key]["abundance"] = -R._data[key]["abundance"]  # Put -Q in the blank space of R
+	#	# Since everything here is percentages, we need to divide to get back to fractions
+	#	for key in R._data.keys():
+	#		R._data[key]["abundance"] /= 100
+	#	# Then push up the mass while adding
+	#	for key in R._data.keys():
+	#		val = R._data[key]["abundance"]
+	#		if abs(val) > eps:
+	#			if "ancestor" in R._data[key]:
+	#				ancestor = R._data[key]["ancestor"]
+	#				R._data[ancestor]["abundance"] += val
+	#				Z += abs(val) * R._data[key]["branch_length"]
+	#	return Z
+
+	def make_unifrac_input_and_normalize(self, other):
 		if not isinstance(other, Profile):
-			print("Must be a profile")
 			raise Exception
-		# For the fun of it, let's throw in the unifrac distance
-		P = copy.deepcopy(self)  # make a copy of the data since we don't want to change it
-		Q = copy.deepcopy(other)
-		P.normalize()
-		Q.normalize()
-		P._subtract_down()
-		Q._subtract_down()
-		R = copy.deepcopy(P)  # this will be our partial sums
-		# next, do partial_sums = P - Q
-		Z = 0
-		for key in Q._data.keys():
-			if key in R._data:
-				R._data[key]["abundance"] -= Q._data[key]["abundance"]  # Subtract Q from R
-			else:
-				R._data[key] = Q._data[key]  # Do I need to use copy here?
-				R._data[key]["abundance"] = -R._data[key]["abundance"]  # Put -Q in the blank space of R
-		# Since everything here is percentages, we need to divide to get back to fractions
-		for key in R._data.keys():
-			R._data[key]["abundance"] /= 100
-		# Then push up the mass while adding
-		for key in R._data.keys():
-			val = R._data[key]["abundance"]
-			if abs(val) > eps:
-				if "ancestor" in R._data[key]:
-					ancestor = R._data[key]["ancestor"]
-					R._data[ancestor]["abundance"] += val
-					Z += abs(val) * R._data[key]["branch_length"]
-		return Z
+		_data = self._data
+		_other_data = other._data
+
+		_data_keys = _data.keys()
+		tax_path_lengths1 = max([len(_data[key]["tax_path"]) for key in _data_keys])
+		_other_data_keys = _other_data.keys()
+		tax_path_lengths2 = max([len(_other_data[key]["tax_path"]) for key in _other_data_keys])
+		tax_path_lengths = max(tax_path_lengths1, tax_path_lengths2)
+		all_keys = set(_data_keys)
+		all_keys.update(_other_data_keys)
+		nodes_in_order = []
+		for path_length in range(tax_path_lengths, 0, -1):
+			for key in all_keys:
+				if key in _data:
+					if len(_data[key]["tax_path"]) == path_length:
+						if key not in nodes_in_order:
+							nodes_in_order.append(key)
+				elif key in _other_data:
+					if len(_other_data[key]["tax_path"]) == path_length:
+						if key not in nodes_in_order:
+							nodes_in_order.append(key)
+		# Make the graph
+		# Put the root at the very end
+		if '-1' in nodes_in_order:
+			nodes_in_order.pop(nodes_in_order.index('-1'))
+			nodes_in_order.append('-1')
+		else:
+			nodes_in_order.append('-1')
+		Tint = dict()
+		lint = dict()
+		for key in nodes_in_order:
+			if key in _data:
+				if "ancestor" in _data[key]:  # If ancestor is not in there, then it's an ancestor
+					ancestor = _data[key]["ancestor"]
+					Tint[key] = ancestor
+					lint[key, ancestor] = _data[key]["branch_length"]
+			elif key in _other_data:
+				if "ancestor" in _other_data[key]:
+					ancestor = _other_data[key]["ancestor"]
+					Tint[key] = ancestor
+					lint[key, ancestor] = _other_data[key]["branch_length"]
+		nodes_to_index = dict(zip(nodes_in_order, range(len(nodes_in_order))))
+		#return Tint, lint, nodes_in_order, nodes_to_index
+
+		# Now need to change over to the integer-based indexing
+		Tint2 = dict()
+		lint2 = dict()
+		nodes_in_order2 = []
+		for key in nodes_in_order:
+			if key in Tint:
+				ancestor = Tint[key]
+				Tint2[nodes_to_index[key]] = nodes_to_index[ancestor]
+				if (key, ancestor) in lint:
+					lint2[nodes_to_index[key], nodes_to_index[ancestor]] = lint[key, ancestor]
+			nodes_in_order2.append(nodes_to_index[key])
+
+		# Next make the probability distributions
+		# Would be nice if I could find a non-destructive way to subtract up and normalize
+
+		# Do it for P
+		self._subtract_down()
+		keys = _data.keys()
+		total_abundance = 0
+		for key in keys:
+			total_abundance += _data[key]["abundance"]
+		# print(total_abundance)
+		for key in keys:
+			if total_abundance > 0:
+				_data[key]["abundance"] /= total_abundance  # Should be a fraction, summing to 1
+		P = np.zeros(len(nodes_in_order))
+		for key_ind in xrange(len(nodes_in_order)):
+			key = nodes_in_order[key_ind]
+			if key in _data:
+				P[key_ind] = _data[key]["abundance"]
+
+		# Make back into percentages and add the mass back up (effectively normalizing the vector)
+		for key in keys:
+			if total_abundance > 0:
+				_data[key]["abundance"] *= 100
+		self._add_up()
+
+		# Next do for Q
+		other._subtract_down()
+		keys = _other_data.keys()
+		total_abundance = 0
+		for key in keys:
+			total_abundance += _other_data[key]["abundance"]
+		# print(total_abundance)
+		for key in keys:
+			if total_abundance > 0:
+				_other_data[key]["abundance"] /= total_abundance  # should be a fraction, summing to 1
+		Q = np.zeros(len(nodes_in_order))
+		for key_ind in xrange(len(nodes_in_order)):
+			key = nodes_in_order[key_ind]
+			if key in _other_data:
+				Q[key_ind] = _other_data[key]["abundance"]
+
+		# Make back into percentages and add the mass back up (effectively normalizing the vector)
+		for key in keys:
+			if total_abundance > 0:
+				_other_data[key]["abundance"] *= 100
+		other._add_up()
+
+		return Tint2, lint2, nodes_in_order2, nodes_to_index, P, Q
+
+def test_normalize():
+	profile = Profile('/home/dkoslicki/Dropbox/Repositories/CAMIProfilingTools/src/test0.profile')
+	profile.write_file('/home/dkoslicki/Dropbox/Repositories/CAMIProfilingTools/src/test0.profile.import')
+	profile.normalize()
+	profile.write_file('/home/dkoslicki/Dropbox/Repositories/CAMIProfilingTools/src/test0.profile.normalize')
+
+def test_unifrac():
+	sys.path.append('/home/dkoslicki/Dropbox/Repositories/EMDUnifrac/src')
+	import EMDUnifrac as EMDU
+	profile1 = Profile('/home/dkoslicki/Dropbox/Repositories/EMDUnifrac/data/test1.profile')
+	profile2 = Profile('/home/dkoslicki/Dropbox/Repositories/EMDUnifrac/data/test2.profile')
+	t0 = timeit.default_timer()
+	(Tint, lint, nodes_in_order, nodes_to_index, P, Q) = profile1.make_unifrac_input_and_normalize(profile2)
+	t1 = timeit.default_timer()
+	print(t1-t0)
+	(Z, diffab) = EMDU.EMDUnifrac_weighted(Tint, lint, nodes_in_order, P, Q)
+	print(Z)
+	(Tint, lint, nodes_in_order, nodes_to_index, P, Q) = profile1.make_unifrac_input_and_normalize(profile2)
+	(Z2, diffab2) = EMDU.EMDUnifrac_weighted(Tint, lint, nodes_in_order, P, Q)
+	print(Z2)
+	profile1.normalize()
+	profile2.normalize()
+	(Tint, lint, nodes_in_order, nodes_to_index, P, Q) = profile1.make_unifrac_input_and_normalize(profile2)
+	(Z3, diffab3) = EMDU.EMDUnifrac_weighted(Tint, lint, nodes_in_order, P, Q)
+	print(Z3)
+
+	print(diffab)
+	print(diffab2)
+	print(diffab3)
