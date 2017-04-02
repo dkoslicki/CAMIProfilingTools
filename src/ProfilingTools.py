@@ -27,6 +27,7 @@ class Profile(object):
 		self._abundance_pos = None
 		self._eps = .0000000000000001  # This is to act like zero, ignore any lines with abundance below this quantity
 		self._all_keys = ["-1"]
+		self._merged_flag = False
 
 		if self.input_file_name:
 			if not os.path.exists(self.input_file_name):
@@ -135,7 +136,9 @@ class Profile(object):
 					_data[ancestor] = dict()
 					_data[ancestor]["descendants"] = list()
 					_data[ancestor]["descendants"].append(tax_id)
+		print('tic')
 		self._delete_missing()  # make sure there aren't any missing internal nodes
+		print('toc')
 
 	def _delete_missing(self):
 		# This is really only useful for MetaPhlAn profiles, which due to the infrequently updated taxonomy, contain
@@ -355,7 +358,9 @@ class Profile(object):
 		if not isinstance(other, Profile):
 			print("Only works with other Profiles")
 			raise Exception
-		self._header.insert(0, "# This is a merged file, ignore files in headers below")
+		if self._merged_flag is False:
+			self._header.insert(0, "# This is a merged file, ignore files in headers below")
+			self._merged_flag = True
 		_data = self._data
 		_other_data = other._data
 		other_keys = _other_data.keys()
