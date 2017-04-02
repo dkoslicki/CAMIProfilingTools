@@ -41,7 +41,7 @@ class Profile(object):
 		_data = self._data
 		_header = self._header
 		_all_keys = self._all_keys
-		all_tax_ids = set()
+		# all_tax_ids = set()
 		with open(input_file_name, 'r') as read_handler:
 			for line in read_handler:
 				line = line.rstrip()
@@ -71,13 +71,14 @@ class Profile(object):
 					_header.append(line)  # store data and move on
 					continue
 				if not all([isinstance(x, int) for x in [tax_id_pos, tax_path_pos, abundance_pos]]):
-					print("Appears the headers TAXID, TAXPATH, and PERCENTAGE are missing from the header (should start with line @@)")
+					print("Appears the headers TAXID, TAXPATH, and PERCENTAGE are missing from the "
+											"header (should start with line @@)")
 					sys.exit(2)
 				temp_split = line.split('\t')
 				tax_id = temp_split[tax_id_pos].strip()
 				_all_keys.append(tax_id)
 				tax_path = temp_split[tax_path_pos].strip().split("|")  # this will be a list, join up late
-				all_tax_ids.update(tax_path)
+				# all_tax_ids.update(tax_path)
 				abundance = float(temp_split[abundance_pos].strip())
 				if isinstance(rank_pos, int):  # might not be present
 					rank = temp_split[rank_pos].strip()
@@ -139,8 +140,8 @@ class Profile(object):
 					_data[ancestor]["descendants"] = list()
 					_data[ancestor]["descendants"].append(tax_id)
 		# only fix if need be
-		if all_tax_ids.intersection(_all_keys):
-			self._delete_missing()  # make sure there aren't any missing internal nodes
+		# if all_tax_ids.intersection(_all_keys):
+		self._delete_missing()  # make sure there aren't any missing internal nodes
 
 	def _delete_missing(self):
 		# This is really only useful for MetaPhlAn profiles, which due to the infrequently updated taxonomy, contain
@@ -371,43 +372,6 @@ class Profile(object):
 				_data[key]["abundance"] += _other_data[key]["abundance"]  # if already in there, add abundances
 			else:
 				_data[key] = copy.copy(_other_data[key])  # otherwise use the whole thing
-
-	# Keep EMDUnifrac and CAMI in separate repositories. See EMDUnifrac/src/ for example of how to use the two
-	#def unifrac(self, other, eps=0):
-	#	# I'm not sure this is giving the right answer....
-	#	print("Don't think this is working")
-	#	raise Exception
-	#	if not isinstance(other, Profile):
-	#		print("Must be a profile")
-	#		raise Exception
-	#	# For the fun of it, let's throw in the unifrac distance
-	#	P = copy.deepcopy(self)  # make a copy of the data since we don't want to change it
-	#	Q = copy.deepcopy(other)
-	#	P.normalize()
-	#	Q.normalize()
-	#	P._subtract_down()
-	#	Q._subtract_down()
-	#	R = copy.deepcopy(P)  # this will be our partial sums
-	#	# next, do partial_sums = P - Q
-	#	Z = 0
-	#	for key in Q._data.keys():
-	#		if key in R._data:
-	#			R._data[key]["abundance"] -= Q._data[key]["abundance"]  # Subtract Q from R
-	#		else:
-	#			R._data[key] = Q._data[key]  # Do I need to use copy here?
-	#			R._data[key]["abundance"] = -R._data[key]["abundance"]  # Put -Q in the blank space of R
-	#	# Since everything here is percentages, we need to divide to get back to fractions
-	#	for key in R._data.keys():
-	#		R._data[key]["abundance"] /= 100
-	#	# Then push up the mass while adding
-	#	for key in R._data.keys():
-	#		val = R._data[key]["abundance"]
-	#		if abs(val) > eps:
-	#			if "ancestor" in R._data[key]:
-	#				ancestor = R._data[key]["ancestor"]
-	#				R._data[ancestor]["abundance"] += val
-	#				Z += abs(val) * R._data[key]["branch_length"]
-	#	return Z
 
 	def make_unifrac_input_and_normalize(self, other):
 		if not isinstance(other, Profile):
