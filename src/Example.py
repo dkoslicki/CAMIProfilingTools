@@ -1,9 +1,11 @@
 # This is an example of how to use the script
 import ProfilingTools as PF
+import EMDUnifrac as EMDU
 import numpy as np
 import argparse
 import sys
 import os
+import copy
 
 __author__ = 'David Koslicki (dmkoslicki@gmail.com, david.koslicki@math.oregonstate.edu)'
 __version__ = '1.0.0'
@@ -48,7 +50,11 @@ if __name__ == '__main__':
 	D = np.zeros((len(profiles), len(profiles)))
 	for i in xrange(len(profiles)):
 		for j in xrange(i+1, len(profiles)):
-			val = profiles[i].unifrac(profiles[j])
+			#val = profiles[i].unifrac(profiles[j])
+			P1 = copy.deepcopy(profiles[i])
+			P2 = copy.deepcopy(profiles[j])
+			(Tint, lint, nodes_in_order, nodes_to_index, P, Q) = P1.make_unifrac_input_and_normalize(P2)
+			(val, _) = EMDU.EMDUnifrac_weighted(Tint, lint, nodes_in_order, P, Q)
 			D[i, j] = val
 			D[j, i] = val
 
