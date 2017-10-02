@@ -141,6 +141,7 @@ class Profile(object):
 					_data[ancestor] = dict()
 					_data[ancestor]["descendants"] = list()
 					_data[ancestor]["descendants"].append(tax_id)
+					_data[ancestor]["abundance"] = 0.0
 		# only fix if need be
 		# if all_tax_ids.intersection(_all_keys):
 		self._delete_missing()  # make sure there aren't any missing internal nodes
